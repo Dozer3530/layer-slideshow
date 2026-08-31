@@ -25,14 +25,24 @@ Compatible with QGIS 3.22+ and QGIS 4.x (Qt5 and Qt6). Verified against QGIS 3.4
 5. **Loop** is on by default so the slideshow repeats indefinitely; uncheck it to stop after the last group.
 6. **Minimize** collapses the dock to a small floating Play/Pause bar for kiosk use — **Expand** brings back the full panel.
 
-Groups are matched by name, so group names need to be unique. Nested/sub-groups aren't part of the rotation — the plugin only looks at the top level of the layer tree.
+Groups are matched by name, so group names need to be unique (the plugin warns if two clash). Nested/sub-groups aren't part of the rotation — the plugin only looks at the top level of the layer tree.
+
+## Kiosk mode
+
+Everything needed for an unattended display is saved **into the project**, so the booth machine only has to open the `.qgz`:
+
+- **Start automatically when this project opens** — tick it, save the project, and the show runs on open with no interaction. Playback begins a moment after load so layers finish rendering first.
+- **Show legend panel** — an optional dock showing the active group's name and symbology, refreshed on every step. Sized large for walk-up audiences who need to know what they're looking at. It's a dock rather than a canvas overlay, so it can be floated over the map, docked, or left off entirely.
+- **Restore visibility** — puts group visibility back exactly as it was before the show started. The plugin also does this automatically when it's unloaded, so it never leaves your project rearranged.
+
+Interval, loop, group selection, auto-start and the legend preference all persist with the project.
 
 ## Usage
 
 1. Organize your project so each thing you want to show (a layer plus its labels/annotations) lives together in its own top-level group.
 2. Open **Layer Slideshow** from the toolbar or Plugins menu.
 3. Check the groups you want in the rotation, set the interval, and hit **Play**.
-4. For a kiosk/unattended display, click **Minimize** to shrink the dock down to a small floating play/pause bar, then leave the map running.
+4. For a kiosk/unattended display, tick **Start automatically when this project opens** and **Show legend panel**, click **Minimize** to shrink the dock to a floating play/pause bar, then save the project.
 
 ## Project layout
 
@@ -44,7 +54,9 @@ layer-slideshow/
     metadata.txt
     icon.png
     LICENSE
-    slideshow.py            # plugin shell + dock widget (UI, timer, visibility logic)
+    compat.py               # PyQt5/PyQt6 enum resolution, in one place
+    slideshow.py            # plugin shell + dock widget (UI, timer, visibility, persistence)
+    legend.py               # live legend panel: group symbology -> swatches
     test/                   # headless regression tests against the real QGIS API
   build_zip.ps1              # builds the release zip
   README.md / LICENSE / .gitignore
@@ -57,6 +69,11 @@ The QGIS plugin folder stays named `layer_slideshow/` because QGIS identifies in
 QGIS 4 moved from PyQt5 to PyQt6, which scopes enums that PyQt5 left flat (`Qt.UserRole` → `Qt.ItemDataRole.UserRole`, `Qt.Checked` → `Qt.CheckState.Checked`, etc.) and moved `QAction` from `QtWidgets` to `QtGui`. `slideshow.py` resolves the right enum names once at import time and imports `QAction` via `qgis.PyQt.QtGui` (QGIS's own compatibility shim), so the same file runs unmodified on both bindings.
 
 The minimum is 3.22 rather than 3.0 because that `QAction` back-patch lives in QGIS's own `qgis/PyQt/QtGui.py` shim and is not present in early 3.x releases — without it the import fails outright.
+
+Two further Qt6-era traps the tests pin down:
+
+- **An exception inside a Qt slot aborts the process under PyQt6** rather than propagating. `QgsProject.writeEntry()` exposes no `double` overload to Python, so persisting a fractional interval raised `TypeError` from a `valueChanged` handler and took QGIS down with it. The interval is stored as integer milliseconds, and the settings read/write paths log instead of raising.
+- **An empty layer-tree group is falsy.** SIP maps `__len__` to the child count, so `if group_node:` is `False` for a valid but empty group. Node checks use `is not None` throughout.
 
 ## Development
 

@@ -1,38 +1,35 @@
 """Layer Slideshow QGIS plugin.
 
 Cycles layer-group visibility one group at a time on a timer, with play/pause
-and loop. Works on QGIS 3.x (PyQt5) and QGIS 4.x (PyQt6).
+and loop. Works on QGIS 3.22+ (PyQt5) and QGIS 4.x (PyQt6).
+
+Slideshow settings live in the project, not in QgsSettings: a kiosk .qgz then
+carries its own show definition, so the booth machine only has to open the file.
 """
 
 import os
 
-from qgis.PyQt.QtCore import Qt, QTimer
+from qgis.PyQt.QtCore import QTimer
 from qgis.PyQt.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QDoubleSpinBox,
     QLabel, QCheckBox,
 )
 from qgis.PyQt.QtGui import QIcon, QAction
-from qgis.core import QgsProject, QgsLayerTree
+from qgis.core import QgsProject, QgsLayerTree, QgsMessageLog, Qgis
 
-# Enum compatibility: PyQt6 scopes enums (Qt.ItemDataRole.UserRole), PyQt5 does not
-# (Qt.UserRole). Resolve once here so the rest of the file is version-agnostic.
-USER_ROLE = getattr(Qt, "UserRole", None)
-if USER_ROLE is None:
-    USER_ROLE = Qt.ItemDataRole.UserRole
-    CHECKED = Qt.CheckState.Checked
-    UNCHECKED = Qt.CheckState.Unchecked
-    FLAG_CHECKABLE = Qt.ItemFlag.ItemIsUserCheckable
-    FLAG_ENABLED = Qt.ItemFlag.ItemIsEnabled
-    DOCK_RIGHT = Qt.DockWidgetArea.RightDockWidgetArea
-else:
-    CHECKED = Qt.Checked
-    UNCHECKED = Qt.Unchecked
-    FLAG_CHECKABLE = Qt.ItemIsUserCheckable
-    FLAG_ENABLED = Qt.ItemIsEnabled
-    DOCK_RIGHT = Qt.RightDockWidgetArea
+from .compat import (  # noqa: F401  (re-exported for callers and tests)
+    USER_ROLE, CHECKED, UNCHECKED, FLAG_CHECKABLE, FLAG_ENABLED,
+    DOCK_RIGHT, DOCK_LEFT,
+)
+from .legend import SlideshowLegendDock
 
 ICON_PATH = os.path.join(os.path.dirname(__file__), "icon.png")
+
+# QgsProject entry scope for persisted settings.
+SCOPE = "LayerSlideshow"
+# Let layers finish loading and the first render settle before auto-starting.
+AUTOSTART_DELAY_MS = 1500
 
 
 class LayerSlideshowPlugin:
@@ -47,8 +44,15 @@ class LayerSlideshowPlugin:
         self.action.triggered.connect(self.run)
         self.iface.addPluginToMenu("Layer Slideshow", self.action)
         self.iface.addToolBarIcon(self.action)
+        # Watched at plugin level, not dock level: auto-start has to be able to
+        # create the dock for a project opened before anyone clicked the button.
+        QgsProject.instance().readProject.connect(self._maybe_autostart)
 
     def unload(self):
+        try:
+            QgsProject.instance().readProject.disconnect(self._maybe_autostart)
+        except (TypeError, RuntimeError):
+            pass
         if self.dock is not None:
             self.dock.teardown()
             self.iface.removeDockWidget(self.dock)
@@ -66,10 +70,17 @@ class LayerSlideshowPlugin:
         self.dock.show()
         self.dock.raise_()
 
+    def _maybe_autostart(self, *args):
+        if not QgsProject.instance().readBoolEntry(SCOPE, "/AutoStart", False)[0]:
+            return
+        self.run()
+        QTimer.singleShot(AUTOSTART_DELAY_MS, self.dock.play)
+
 
 class SlideshowDock(QDockWidget):
     def __init__(self, iface):
         super().__init__("Layer Slideshow")
+        self.setObjectName("LayerSlideshowDock")
         self.iface = iface
         self.project = QgsProject.instance()
 
@@ -86,9 +97,16 @@ class SlideshowDock(QDockWidget):
         # Distinguishes "first ever populate, default everything on" from
         # "the user has since made a selection" (which may legitimately be empty).
         self._initialized = False
+        # Group visibility as it was before the show first started, so the
+        # project can be handed back unmodified.
+        self._visibility_snapshot = None
+        # Suppress persistence while we are the ones changing the widgets.
+        self._loading = False
+        self.legend_dock = None
 
         self._build_ui()
         self.refresh_layers()
+        self._load_settings()
         self._connect_project()
 
     # ---------- Project signals ----------
@@ -102,7 +120,6 @@ class SlideshowDock(QDockWidget):
         root.addedChildren.connect(self.refresh_layers)
         root.removedChildren.connect(self.refresh_layers)
         root.nameChanged.connect(self.refresh_layers)
-        # A newly loaded project gets a fresh default selection.
         self.project.readProject.connect(self._project_reloaded)
         self.project.cleared.connect(self._project_reloaded)
 
@@ -126,13 +143,78 @@ class SlideshowDock(QDockWidget):
         self.current_name = None
         self._finished = False
         self._initialized = False
+        # The snapshot belonged to the old project; it means nothing here.
+        self._visibility_snapshot = None
         self.refresh_layers()
+        self._load_settings()
         self.status.setText("Idle")
+        if self.legend_dock is not None:
+            self.legend_dock.show_placeholder("Slideshow not running")
 
     def teardown(self):
-        """Stop playback and drop project connections (plugin unload)."""
+        """Stop playback, hand the project back, drop connections (unload)."""
         self.stop()
+        self.restore_visibility()
         self._disconnect_project()
+        self._destroy_legend()
+
+    # ---------- Persistence ----------
+    def _load_settings(self):
+        """Read the show definition back out of the project."""
+        self._loading = True
+        try:
+            ms, ok = self.project.readNumEntry(SCOPE, "/IntervalMs", 3000)
+            self.interval.setValue((ms / 1000.0) if ok and ms > 0 else 3.0)
+
+            loop, ok = self.project.readBoolEntry(SCOPE, "/Loop", True)
+            self.loop.setChecked(loop if ok else True)
+
+            autostart, ok = self.project.readBoolEntry(SCOPE, "/AutoStart", False)
+            self.autostart.setChecked(autostart if ok else False)
+
+            # `ok` alone, not `ok and groups`: readListEntry reports False for a
+            # key that was never written and True for one saved as empty, so a
+            # deliberately empty selection must not fall through to "check all".
+            groups, ok = self.project.readListEntry(SCOPE, "/Groups")
+            if ok:
+                wanted = set(groups)
+                for i in range(self.list.count()):
+                    item = self.list.item(i)
+                    item.setCheckState(
+                        CHECKED if item.data(USER_ROLE) in wanted else UNCHECKED)
+                self._initialized = True
+
+            show_legend, ok = self.project.readBoolEntry(SCOPE, "/ShowLegend", False)
+            self.show_legend.setChecked(show_legend if ok else False)
+        except Exception as exc:                        # pragma: no cover
+            QgsMessageLog.logMessage(
+                "Could not read slideshow settings: {}".format(exc),
+                "Layer Slideshow", Qgis.Warning)
+        finally:
+            self._loading = False
+
+    def _persist(self, *args):
+        """Write the show definition into the project.
+
+        Runs from Qt signal handlers, where PyQt6 aborts the process on an
+        unhandled exception rather than propagating it -- so this must never
+        raise. Note the interval is stored as integer milliseconds: writeEntry
+        exposes no double overload to Python.
+        """
+        if self._loading:
+            return
+        try:
+            self.project.writeEntry(
+                SCOPE, "/IntervalMs", int(round(self.interval.value() * 1000)))
+            self.project.writeEntry(SCOPE, "/Loop", self.loop.isChecked())
+            self.project.writeEntry(SCOPE, "/AutoStart", self.autostart.isChecked())
+            self.project.writeEntry(
+                SCOPE, "/ShowLegend", self.show_legend.isChecked())
+            self.project.writeEntry(SCOPE, "/Groups", self.checked_group_names())
+        except Exception as exc:                        # pragma: no cover
+            QgsMessageLog.logMessage(
+                "Could not save slideshow settings: {}".format(exc),
+                "Layer Slideshow", Qgis.Warning)
 
     # ---------- UI ----------
     def _build_ui(self):
@@ -165,11 +247,20 @@ class SlideshowDock(QDockWidget):
         layout.addWidget(QLabel("Groups in slideshow (checked, bottom-to-top order):"))
 
         self.list = QListWidget()
+        self.list.itemChanged.connect(self._persist)
         layout.addWidget(self.list)
 
+        list_btns = QHBoxLayout()
         refresh_btn = QPushButton("Refresh group list")
         refresh_btn.clicked.connect(self.refresh_layers)
-        layout.addWidget(refresh_btn)
+        list_btns.addWidget(refresh_btn)
+        self.restore_btn = QPushButton("Restore visibility")
+        self.restore_btn.setToolTip(
+            "Put group visibility back the way it was before the slideshow started")
+        self.restore_btn.clicked.connect(self._restore_clicked)
+        self.restore_btn.setEnabled(False)
+        list_btns.addWidget(self.restore_btn)
+        layout.addLayout(list_btns)
 
         interval_row = QHBoxLayout()
         interval_row.addWidget(QLabel("Interval (s):"))
@@ -184,7 +275,20 @@ class SlideshowDock(QDockWidget):
 
         self.loop = QCheckBox("Loop")
         self.loop.setChecked(True)
+        self.loop.toggled.connect(self._persist)
         layout.addWidget(self.loop)
+
+        self.autostart = QCheckBox("Start automatically when this project opens")
+        self.autostart.setToolTip(
+            "Save the project with this ticked and the show runs unattended on open")
+        self.autostart.toggled.connect(self._persist)
+        layout.addWidget(self.autostart)
+
+        self.show_legend = QCheckBox("Show legend panel")
+        self.show_legend.setToolTip(
+            "Display the active group's symbology in its own dock")
+        self.show_legend.toggled.connect(self._legend_toggled)
+        layout.addWidget(self.show_legend)
 
         btn_row = QHBoxLayout()
         self.play_btn = QPushButton("Play")
@@ -233,7 +337,7 @@ class SlideshowDock(QDockWidget):
     def expand(self):
         self.mini_panel.setVisible(False)
         self.full_panel.setVisible(True)
-        self.resize(320, 480)
+        self.resize(320, 520)
 
     def _sync_buttons(self, playing):
         """Keep full and mini play/pause buttons in the same enabled state."""
@@ -241,6 +345,77 @@ class SlideshowDock(QDockWidget):
         self.pause_btn.setEnabled(playing)
         self.mini_play_btn.setEnabled(not playing)
         self.mini_pause_btn.setEnabled(playing)
+
+    # ---------- Legend ----------
+    def _legend_toggled(self, checked):
+        if checked:
+            self._ensure_legend()
+            self._update_legend()
+        else:
+            self._destroy_legend()
+        self._persist()
+
+    def _ensure_legend(self):
+        if self.legend_dock is None:
+            self.legend_dock = SlideshowLegendDock()
+            self.iface.addDockWidget(DOCK_LEFT, self.legend_dock)
+        self.legend_dock.show()
+
+    def _destroy_legend(self):
+        if self.legend_dock is None:
+            return
+        self.iface.removeDockWidget(self.legend_dock)
+        self.legend_dock.deleteLater()
+        self.legend_dock = None
+
+    def _update_legend(self):
+        if self.legend_dock is None:
+            return
+        if self.current_name is None:
+            self.legend_dock.show_placeholder("Slideshow not running")
+            return
+        node = self.project.layerTreeRoot().findGroup(self.current_name)
+        if node is None:
+            self.legend_dock.show_placeholder(
+                "Group \"{}\" not found".format(self.current_name))
+        else:
+            self.legend_dock.show_group(node)
+
+    # ---------- Visibility snapshot ----------
+    def _snapshot_visibility(self):
+        """Remember every top-level group's visibility before the show starts."""
+        if self._visibility_snapshot is not None:
+            return
+        root = self.project.layerTreeRoot()
+        self._visibility_snapshot = {
+            child.name(): child.itemVisibilityChecked()
+            for child in root.children() if QgsLayerTree.isGroup(child)
+        }
+        self.restore_btn.setEnabled(True)
+
+    def restore_visibility(self):
+        """Put group visibility back as it was before the show started."""
+        if not self._visibility_snapshot:
+            self._visibility_snapshot = None
+            return False
+        root = self.project.layerTreeRoot()
+        for name, visible in self._visibility_snapshot.items():
+            node = root.findGroup(name)
+            if node is not None:
+                node.setItemVisibilityChecked(visible)
+        self._visibility_snapshot = None
+        self.restore_btn.setEnabled(False)
+        self.iface.mapCanvas().refresh()
+        return True
+
+    def _restore_clicked(self):
+        self.stop()
+        self.index = -1
+        self.current_name = None
+        self._finished = False
+        if self.restore_visibility():
+            self.status.setText("Visibility restored")
+        self._update_legend()
 
     # ---------- Layer list ----------
     def refresh_layers(self, *args):
@@ -258,27 +433,31 @@ class SlideshowDock(QDockWidget):
             prev_checked = None
             prev_known = set()
 
-        self.list.clear()
-        root = self.project.layerTreeRoot()
-        names = []
-        for child in reversed(root.children()):
-            if not QgsLayerTree.isGroup(child):
-                continue
-            name = child.name()
-            names.append(name)
-            item = QListWidgetItem(name)
-            item.setData(USER_ROLE, name)
-            item.setFlags(FLAG_CHECKABLE | FLAG_ENABLED)
-            if prev_checked is None:
-                keep = True                       # first populate: everything on
-            elif name in prev_checked:
-                keep = True                       # user had it on
-            elif name not in prev_known:
-                keep = True                       # brand new group joins the show
-            else:
-                keep = False                      # user turned it off; respect that
-            item.setCheckState(CHECKED if keep else UNCHECKED)
-            self.list.addItem(item)
+        was_loading, self._loading = self._loading, True
+        try:
+            self.list.clear()
+            root = self.project.layerTreeRoot()
+            names = []
+            for child in reversed(root.children()):
+                if not QgsLayerTree.isGroup(child):
+                    continue
+                name = child.name()
+                names.append(name)
+                item = QListWidgetItem(name)
+                item.setData(USER_ROLE, name)
+                item.setFlags(FLAG_CHECKABLE | FLAG_ENABLED)
+                if prev_checked is None:
+                    keep = True                   # first populate: everything on
+                elif name in prev_checked:
+                    keep = True                   # user had it on
+                elif name not in prev_known:
+                    keep = True                   # brand new group joins the show
+                else:
+                    keep = False                  # user turned it off; respect that
+                item.setCheckState(CHECKED if keep else UNCHECKED)
+                self.list.addItem(item)
+        finally:
+            self._loading = was_loading
 
         self._initialized = True
         self._resync_index()
@@ -321,12 +500,14 @@ class SlideshowDock(QDockWidget):
     def _interval_changed(self, val):
         if self.running:
             self.timer.setInterval(int(val * 1000))
+        self._persist()
 
     def play(self):
         names = self.checked_group_names()
         if not names:
             self.status.setText("No groups checked.")
             return
+        self._snapshot_visibility()
         # A finished non-looping run restarts from the top instead of instantly
         # re-finishing on the first tick.
         if self._finished or self.index < 0:
@@ -377,6 +558,7 @@ class SlideshowDock(QDockWidget):
             self.status.setText(
                 "Group \"{}\" no longer exists (renamed or deleted) — "
                 "click Refresh group list.".format(current))
+        self._update_legend()
 
     def _apply_visibility(self, slideshow_names, visible_name):
         """Show only visible_name among the slideshow groups; leave others untouched.

@@ -15,6 +15,8 @@ $runtimeFiles = @(
     "metadata.txt",
     "LICENSE",
     "icon.png",
+    "compat.py",
+    "legend.py",
     "slideshow.py"
 )
 
