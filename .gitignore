@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+build/
+dist/
+
+# QGIS / plugin build artifacts
+*.pyc
+help/build/
+i18n/*.qm
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Release zips (attach to GitHub Releases instead of committing)
+layer-slideshow-*.zip

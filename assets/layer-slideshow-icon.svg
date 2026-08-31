@@ -1,0 +1,19 @@
+<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <!-- Original Layer Slideshow icon: minimal wireframe stacked layers with a
+       cycling arrow. 100% original vector art (no photographic source). -->
+  <g fill="none" stroke="#2B3540" stroke-width="3"
+     stroke-linecap="round" stroke-linejoin="round">
+    <rect x="14" y="38" width="46" height="34" rx="5"/>
+    <rect x="24" y="28" width="46" height="34" rx="5"/>
+    <rect x="34" y="18" width="46" height="34" rx="5"/>
+  </g>
+
+  <!-- Play mark on the front (active) layer -->
+  <path d="M46,30 L60,35 L46,40 Z" fill="#2B3540" stroke="none"/>
+
+  <!-- Cycle motif: dashed circular arrow -->
+  <g fill="none" stroke="#E8590C" stroke-width="2.6" stroke-linecap="round">
+    <path d="M18,80 A14,14 0 1 1 30,86" stroke-dasharray="0.1 5.5"/>
+    <path d="M31,80 L30,86 L24,84" fill="none"/>
+  </g>
+</svg>

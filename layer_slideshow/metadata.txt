@@ -1,0 +1,31 @@
+[general]
+name=Layer Slideshow
+qgisMinimumVersion=3.0
+qgisMaximumVersion=4.99
+supportsQt6=True
+description=Cycle layer-group visibility as a timed slideshow with play/pause.
+version=1.1.0
+author=Zachary Komarnisky
+email=zkomarnisky@oldscollege.ca
+license=MIT
+
+about=Pick which layer groups belong in the slideshow, set an interval, and the plugin shows one group at a time, hiding the others in the slideshow while leaving everything else (like a basemap) untouched. Playback runs bottom-to-top through the layer tree, supports looping, and can collapse to a small floating play/pause bar for unattended kiosk displays.
+
+tracker=https://github.com/Dozer3530/layer-slideshow/issues
+repository=https://github.com/Dozer3530/layer-slideshow
+
+changelog=1.1.0
+      - QGIS 4 / Qt6 compatibility declared in metadata (supportsQt6, qgisMaximumVersion)
+      - Added plugin icon
+      - Bundled LICENSE inside the plugin package
+      1.0.0
+      - Initial release: group-based slideshow with play/pause/loop, interval control, and a minimize/expand kiosk bar
+
+tags=slideshow, layers, groups, display, kiosk, presentation, visibility, timer, exhibit
+
+homepage=https://github.com/Dozer3530/layer-slideshow
+category=Plugins
+icon=icon.png
+experimental=False
+deprecated=False
+server=False
