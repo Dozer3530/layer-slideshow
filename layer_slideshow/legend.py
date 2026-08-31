@@ -5,7 +5,7 @@ each step. A dock widget rather than a canvas overlay: QgsMapCanvasItem
 subclasses need hand-painted rendering that behaves differently under Qt6,
 while a dock is plain widget code that works unmodified on both bindings.
 
-Sized for a walk-up public audience -- large group heading, large swatches.
+Sized to stay readable at a distance -- large group heading, large swatches.
 """
 
 from qgis.PyQt.QtCore import QSize

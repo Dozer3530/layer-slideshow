@@ -2,9 +2,7 @@
 
 # Layer Slideshow
 
-Cycles layer-group visibility on a timer, one group shown at a time, with play/pause and loop — for unattended kiosk and exhibit displays in QGIS.
-
-Built for an Olds College Smart Farm booth at the Calgary Stampede: the map runs unattended in a loop for a walk-up public audience.
+Cycles layer-group visibility on a timer, one group shown at a time, with play/pause and loop — for unattended kiosk and display use in QGIS.
 
 AI assistance was used to make this plugin possible.
 
@@ -29,10 +27,10 @@ Groups are matched by name, so group names need to be unique (the plugin warns i
 
 ## Kiosk mode
 
-Everything needed for an unattended display is saved **into the project**, so the booth machine only has to open the `.qgz`:
+Everything needed for an unattended display is saved **into the project**, so the display machine only has to open the `.qgz`:
 
 - **Start automatically when this project opens** — tick it, save the project, and the show runs on open with no interaction. Playback begins a moment after load so layers finish rendering first.
-- **Show legend panel** — an optional dock showing the active group's name and symbology, refreshed on every step. Sized large for walk-up audiences who need to know what they're looking at. It's a dock rather than a canvas overlay, so it can be floated over the map, docked, or left off entirely.
+- **Show legend panel** — an optional dock showing the active group's name and symbology, refreshed on every step. Sized large so it stays readable at a distance. It's a dock rather than a canvas overlay, so it can be floated over the map, docked, or left off entirely.
 - **Restore visibility** — puts group visibility back exactly as it was before the show started. The plugin also does this automatically when it's unloaded, so it never leaves your project rearranged.
 
 Interval, loop, group selection, auto-start and the legend preference all persist with the project.

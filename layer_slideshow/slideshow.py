@@ -4,7 +4,7 @@ Cycles layer-group visibility one group at a time on a timer, with play/pause
 and loop. Works on QGIS 3.22+ (PyQt5) and QGIS 4.x (PyQt6).
 
 Slideshow settings live in the project, not in QgsSettings: a kiosk .qgz then
-carries its own show definition, so the booth machine only has to open the file.
+carries its own show definition, so the display machine only has to open the file.
 """
 
 import os

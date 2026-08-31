@@ -9,14 +9,14 @@ author=Zachary Komarnisky
 email=zkomarnisky@oldscollege.ca
 license=MIT
 
-about=Pick which layer groups belong in the slideshow, set an interval, and the plugin shows one group at a time, hiding the others in the slideshow while leaving everything else (like a basemap) untouched. Playback runs bottom-to-top through the layer tree, supports looping, and can collapse to a small floating play/pause bar for unattended kiosk displays. Settings are saved into the project, so a kiosk project can start its slideshow automatically on open, and an optional legend panel shows the active group's symbology for walk-up audiences.
+about=Pick which layer groups belong in the slideshow, set an interval, and the plugin shows one group at a time, hiding the others in the slideshow while leaving everything else (like a basemap) untouched. Playback runs bottom-to-top through the layer tree, supports looping, and can collapse to a small floating play/pause bar for unattended kiosk displays. Settings are saved into the project, so a kiosk project can start its slideshow automatically on open, and an optional legend panel shows the active group's symbology.
 
 tracker=https://github.com/Dozer3530/layer-slideshow/issues
 repository=https://github.com/Dozer3530/layer-slideshow
 
 changelog=1.3.0
       - Settings (interval, loop, group selection, auto-start, legend) are saved in the project, so a kiosk .qgz carries its own show definition
-      - New "Start automatically when this project opens" option for unattended booth displays
+      - New "Start automatically when this project opens" option for unattended displays
       - New "Restore visibility" button; the plugin also hands group visibility back as it found it when unloaded
       - New optional legend panel showing the active group's symbology, refreshed on each step
       - Fixed: an empty group made the legend heading blank, because an empty layer-tree group is falsy in Python (SIP maps __len__ to child count) — node checks now use "is not None"
