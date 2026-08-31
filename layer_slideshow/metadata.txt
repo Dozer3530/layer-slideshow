@@ -1,10 +1,10 @@
 [general]
 name=Layer Slideshow
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
 description=Cycle layer-group visibility as a timed slideshow with play/pause.
-version=1.1.0
+version=1.2.0
 author=Zachary Komarnisky
 email=zkomarnisky@oldscollege.ca
 license=MIT
@@ -14,7 +14,17 @@ about=Pick which layer groups belong in the slideshow, set an interval, and the 
 tracker=https://github.com/Dozer3530/layer-slideshow/issues
 repository=https://github.com/Dozer3530/layer-slideshow
 
-changelog=1.1.0
+changelog=1.2.0
+      - Fixed: unchecking every group was silently undone on the next list refresh
+      - Fixed: Play did nothing after a non-looping show reached the end
+      - Fixed: closing the panel left Play greyed out and Pause enabled, so the show could not be restarted
+      - Fixed: adding, removing or renaming a group did not refresh the list (group changes are layer-tree events, not layer events)
+      - Fixed: renaming a group mid-show silently dropped it from the rotation; the playhead now follows the rename
+      - Warn when two top-level groups share a name, since groups are matched by name
+      - Toolbar and menu action now use the plugin icon
+      - Raised qgisMinimumVersion to 3.22 (the QAction compatibility shim this plugin relies on is not present in early 3.x)
+      - Added a headless regression test suite (16 tests, passing on QGIS 3.44/Qt5 and 4.0.1/Qt6)
+      1.1.0
       - QGIS 4 / Qt6 compatibility declared in metadata (supportsQt6, qgisMaximumVersion)
       - Added plugin icon
       - Bundled LICENSE inside the plugin package

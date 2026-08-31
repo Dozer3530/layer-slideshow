@@ -14,7 +14,7 @@ Grab the latest `layer-slideshow-vX.Y.Z.zip` from the [Releases](https://github.
 
 **Plugins → Manage and Install Plugins → Install from ZIP** → select the file → **Install Plugin**.
 
-Compatible with QGIS 3.x and QGIS 4.x (Qt5 and Qt6).
+Compatible with QGIS 3.22+ and QGIS 4.x (Qt5 and Qt6). Verified against QGIS 3.44.12 (Qt 5.15) and QGIS 4.0.1 (Qt 6.8).
 
 ## What it does
 
@@ -45,6 +45,7 @@ layer-slideshow/
     icon.png
     LICENSE
     slideshow.py            # plugin shell + dock widget (UI, timer, visibility logic)
+    test/                   # headless regression tests against the real QGIS API
   build_zip.ps1              # builds the release zip
   README.md / LICENSE / .gitignore
 ```
@@ -54,6 +55,18 @@ The QGIS plugin folder stays named `layer_slideshow/` because QGIS identifies in
 ## QGIS 3 / QGIS 4 compatibility
 
 QGIS 4 moved from PyQt5 to PyQt6, which scopes enums that PyQt5 left flat (`Qt.UserRole` → `Qt.ItemDataRole.UserRole`, `Qt.Checked` → `Qt.CheckState.Checked`, etc.) and moved `QAction` from `QtWidgets` to `QtGui`. `slideshow.py` resolves the right enum names once at import time and imports `QAction` via `qgis.PyQt.QtGui` (QGIS's own compatibility shim), so the same file runs unmodified on both bindings.
+
+The minimum is 3.22 rather than 3.0 because that `QAction` back-patch lives in QGIS's own `qgis/PyQt/QtGui.py` shim and is not present in early 3.x releases — without it the import fails outright.
+
+## Development
+
+The tests exercise the real QGIS layer tree, so they run under a QGIS Python:
+
+```powershell
+& "C:\Program Files\QGIS 4.0.1\bin\python-qgis.bat" -m unittest layer_slideshow.test.test_slideshow -v
+```
+
+Swap in `python-qgis-ltr.bat` from a QGIS 3.x install to check the Qt5 path.
 
 ## Build a release zip
 
